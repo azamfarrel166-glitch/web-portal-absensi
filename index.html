@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#042211">
+    <title>Portal Presensi Siswa | Yayasan Al-Amin Tabanan</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        body {
+            background-color: #021309;
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+        .ambient-bg {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: radial-gradient(circle at 20% 10%, #0c5c2c 0%, transparent 45%),
+                        radial-gradient(circle at 80% 30%, #ca8a04 0%, transparent 35%),
+                        #021309;
+        }
+        .ios-glass {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(28px) saturate(190%);
+            -webkit-backdrop-filter: blur(28px) saturate(190%);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.45);
+        }
+        .ios-glass-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.04) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+        }
+        .ios-pill-btn {
+            transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .ios-pill-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="min-h-screen pb-16 selection:bg-yellow-400 selection:text-green-950">
+    <div class="ambient-bg"></div>
+
+    <!-- TOAST NOTIFIKASI -->
+    <div class="fixed top-3 inset-x-0 z-50 flex justify-center px-4 pointer-events-none">
+        <div class="pointer-events-auto ios-glass rounded-full px-4 py-2 flex items-center gap-2.5 border border-yellow-400/40 shadow-2xl">
+            <div id="portalToastDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></div>
+            <span id="portalToastText" class="text-xs font-semibold text-white">Portal Siswa Yayasan Al-Amin Tabanan</span>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- LAYAR 1: LOGIN SISWA (HANYA PIN 6 DIGIT, TANPA NIS & TANPA URL) -->
+    <!-- ================================================================== -->
+    <div id="loginView" class="min-h-screen flex items-center justify-center p-4 pt-14">
+        <div class="ios-glass rounded-3xl p-6 max-w-sm w-full space-y-5 border border-yellow-400/35">
+            <div class="text-center space-y-2">
+                <div class="w-16 h-16 rounded-2xl bg-emerald-800/70 border-2 border-yellow-400 flex items-center justify-center font-black text-yellow-300 text-2xl mx-auto shadow-lg">
+                    AA
+                </div>
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-400/20 text-yellow-300 uppercase">Portal Presensi Mandiri</span>
+                <h1 class="text-xl font-extrabold text-white">Yayasan Al-Amin Tabanan</h1>
+                <p class="text-xs text-white/65">Masukkan 6 digit PIN rahasia dari amplop kredensial sekolah Anda.</p>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <label for="studentPinInput" class="text-[11px] font-bold text-white/80 block mb-1.5 text-center">PIN Akses 6 Digit</label>
+                    <input id="studentPinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"
+                           onkeydown="if(event.key==='Enter') handleStudentLogin()" placeholder="••••••"
+                           class="w-full px-3.5 py-3.5 rounded-2xl bg-black/45 border border-white/20 text-xl font-mono tracking-[0.4em] text-center text-yellow-300 focus:outline-none focus:border-yellow-400">
+                </div>
+
+                <!-- Pesan Error Ramah ("PIN salah", "Terlalu banyak percobaan, coba lagi 15 menit lagi", dll.) -->
+                <div id="studentLoginError" class="hidden p-3 rounded-xl bg-rose-500/20 border border-rose-400/40 text-xs font-bold text-rose-200 text-center"></div>
+
+                <button onclick="handleStudentLogin()" id="btnStudentLogin" class="w-full ios-pill-btn py-3.5 rounded-2xl bg-yellow-400 text-green-950 font-extrabold text-xs shadow-lg flex items-center justify-center gap-2">
+                    <i class="ph-bold ph-sign-in text-base"></i>
+                    <span>Masuk ke Portal Siswa</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- LAYAR 2: BERANDA PORTAL SISWA (SETELAH LOGIN / AUTO-LOGIN) -->
+    <!-- ================================================================== -->
+    <div id="dashboardView" class="hidden max-w-md mx-auto px-4 pt-16 space-y-4">
+        <!-- Profil Siswa & Tombol Logout -->
+        <div class="ios-glass rounded-3xl p-4 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+                <div id="studentInitialsAvatar" class="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-green-950 border border-yellow-400 flex items-center justify-center font-black text-base text-yellow-300 shrink-0">
+                    AA
+                </div>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-1.5">
+                        <span id="dispNis" class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-white/10 text-yellow-300">AA-000</span>
+                        <span id="dispKelas" class="text-xs font-bold text-emerald-300">Kelas</span>
+                    </div>
+                    <h2 id="dispNama" class="text-base font-extrabold text-white truncate mt-0.5">Nama Siswa</h2>
+                </div>
+            </div>
+            <button onclick="handleStudentLogout()" class="ios-pill-btn px-3 py-2 rounded-xl bg-rose-500/20 border border-rose-400/40 text-rose-300 text-xs font-bold flex items-center gap-1 shrink-0">
+                <i class="ph-bold ph-sign-out"></i>
+                <span>Keluar</span>
+            </button>
+        </div>
+
+        <!-- Status Kehadiran Hari Ini & Tombol Check-in Mandiri (Berdasarkan Jam Server WITA) -->
+        <div class="ios-glass rounded-3xl p-5 space-y-4 text-center border border-yellow-400/30">
+            <div class="flex items-center justify-between text-xs text-white/70 border-b border-white/10 pb-2.5">
+                <span>Tanggal Server: <b id="dispServerDate" class="text-white">-</b></span>
+                <span>Jam Server: <b id="dispServerTime" class="text-emerald-300 font-mono">--:-- WITA</b></span>
+            </div>
+
+            <div>
+                <p class="text-[11px] uppercase tracking-wider text-white/60 font-bold">Status Kehadiran Hari Ini</p>
+                <div id="todayStatusBadge" class="inline-block mt-1.5 px-5 py-2 rounded-2xl text-base font-black bg-white/10 text-white border border-white/20">
+                    BELUM ABSEN
+                </div>
+                <p id="todayScanTimeText" class="text-xs text-emerald-200 mt-1"></p>
+            </div>
+
+            <div class="p-3 rounded-2xl bg-black/35 border border-white/10 text-xs space-y-1">
+                <div class="text-yellow-300 font-bold">
+                    Jendela Check-in Mandiri Server: <span id="dispWindowRange">06:00 – 07:30</span> WITA
+                </div>
+                <p id="windowNoticeText" class="text-[11px] text-white/65">Memeriksa jendela waktu server...</p>
+            </div>
+
+            <button id="btnSelfCheckin" onclick="openSelfieCheckinFlow()" disabled
+                    class="w-full ios-pill-btn py-3.5 rounded-2xl bg-emerald-500 text-green-950 font-extrabold text-xs shadow-lg disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2">
+                <i class="ph-bold ph-camera text-base"></i>
+                <span id="btnSelfCheckinLabel">Absen Masuk Sekarang (Kamera & Lokasi)</span>
+            </button>
+
+            <!-- PANEL KAMERA SWAFOTO & DETEKSI WAJAH + LOKASI GPS (BAGIAN D & H) -->
+            <div id="selfieCheckinPanel" class="hidden p-4 rounded-2xl bg-black/50 border border-yellow-400/40 space-y-3 text-left">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-extrabold text-yellow-300">Verifikasi Wajah & Lokasi Sekolah</span>
+                    <button type="button" onclick="closeSelfieCheckinFlow()" class="text-[11px] text-white/60 hover:text-white">Batal ✕</button>
+                </div>
+
+                <div id="gpsStatusBanner" class="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] text-white/80">
+                    📍 Meminta izin lokasi GPS presisi tinggi...
+                </div>
+
+                <div class="relative aspect-square max-w-[260px] mx-auto rounded-2xl overflow-hidden bg-black border-2 border-yellow-400/60 flex items-center justify-center">
+                    <video id="selfieVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+                    <img id="selfiePreviewImg" alt="Pratinjau Foto" class="hidden w-full h-full object-cover">
+                    <div id="iframeCameraFallbackBox" class="hidden inset-0 p-4 flex flex-col items-center justify-center text-center space-y-2.5 bg-black/90">
+                        <i class="ph-duotone ph-camera text-4xl text-yellow-400"></i>
+                        <p class="text-[11px] text-white/85 leading-relaxed">Mode Google Sites / Iframe terdeteksi. Gunakan tombol di bawah untuk mengambil swafoto langsung dari Kamera HP Anda:</p>
+                        <label for="nativeSelfieFileInput" class="cursor-pointer ios-pill-btn px-4 py-2.5 rounded-xl bg-yellow-400 text-green-950 font-extrabold text-xs inline-flex items-center gap-1.5 shadow-lg">
+                            <i class="ph-bold ph-camera-rotate"></i>
+                            <span>Buka Kamera Depan HP</span>
+                        </label>
+                        <input id="nativeSelfieFileInput" type="file" accept="image/*" capture="user" onchange="handleNativeSelfieCapture(event)" class="hidden">
+                    </div>
+                </div>
+
+                <div id="faceDetectionMessage" class="p-2.5 rounded-xl bg-white/5 text-xs text-center text-white/80">
+                    Pastikan wajah terlihat jelas, cukup cahaya, dan menghadap kamera.
+                </div>
+
+                <div class="flex gap-2">
+                    <button type="button" id="btnCaptureSelfie" onclick="captureAndDetectFace()" class="flex-1 ios-pill-btn py-2.5 rounded-xl bg-yellow-400 text-green-950 font-extrabold text-xs">
+                        📸 Ambil Foto (<span id="attemptCounterText">0/5</span>)
+                    </button>
+                    <button type="button" id="btnRetakeSelfie" onclick="retakeSelfiePhoto()" class="hidden ios-pill-btn px-3.5 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs">
+                        Foto Ulang
+                    </button>
+                </div>
+
+                <button type="button" id="btnSubmitVerifiedCheckin" onclick="submitVerifiedSelfCheckin()" disabled
+                        class="w-full ios-pill-btn py-3 rounded-xl bg-emerald-500 text-green-950 font-extrabold text-xs disabled:opacity-40 disabled:pointer-events-none">
+                    Kirim Absen
+                </button>
+            </div>
+        </div>
+
+        <!-- Kartu QR Siswa Sendiri (Boleh Diunduh PNG 85x54mm @ 300 DPI — Bagian C) -->
+        <div class="ios-glass rounded-3xl p-5 space-y-3 text-center">
+            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-400/20 text-yellow-300 uppercase">Kartu QR Identitas Siswa</span>
+            <h3 class="text-sm font-extrabold text-white">Tunjukkan ke Kiosk / Guru Piket</h3>
+
+            <div class="mx-auto w-48 h-48 rounded-2xl bg-white p-3 flex items-center justify-center shadow-inner overflow-hidden">
+                <div id="studentOwnQrCanvas"></div>
+            </div>
+            <p id="cardStatusInfo" class="text-[11px] font-mono text-emerald-300"></p>
+
+            <button id="btnDownloadQrPng" onclick="downloadStudentQrCardPng()" class="w-full ios-pill-btn py-3 rounded-2xl bg-yellow-400 text-green-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg">
+                <i class="ph-bold ph-download-simple text-base"></i>
+                <span>Unduh Kartu QR (PNG)</span>
+            </button>
+            <p class="text-[11px] text-amber-200/90 font-semibold">Kartu ini adalah identitas Anda. Jangan bagikan kepada orang lain.</p>
+        </div>
+
+        <!-- Form Pengajuan Izin / Sakit -->
+        <div class="ios-glass rounded-3xl p-5 space-y-3">
+            <h3 class="text-sm font-extrabold text-white flex items-center gap-1.5">
+                <i class="ph-fill ph-envelope-open text-yellow-400"></i>
+                <span>Form Pengajuan Izin / Sakit</span>
+            </h3>
+            <div class="space-y-2.5">
+                <select id="leaveTypeSelect" class="w-full px-3.5 py-2.5 rounded-xl bg-black/45 border border-white/15 text-xs text-white font-bold">
+                    <option value="Izin">Izin (Keperluan Keluarga / Acara)</option>
+                    <option value="Sakit">Sakit (Istirahat / Surat Dokter)</option>
+                </select>
+                <input id="leaveReasonInput" type="text" placeholder="Keterangan alasan lengkap..."
+                       class="w-full px-3.5 py-2.5 rounded-xl bg-black/45 border border-white/15 text-xs text-white">
+                <input id="leaveProofLinkInput" type="url" placeholder="Tautan Bukti Google Drive (opsional)..."
+                       class="w-full px-3.5 py-2.5 rounded-xl bg-black/45 border border-white/15 text-xs text-white">
+                <button onclick="submitStudentLeave()" class="w-full ios-pill-btn py-2.5 rounded-xl bg-yellow-400 text-green-950 font-extrabold text-xs">
+                    Kirim Pengajuan Izin/Sakit
+                </button>
+            </div>
+            <div id="myLeaveListContainer" class="space-y-1.5 pt-2"></div>
+        </div>
+
+        <!-- Riwayat Absensi 30 Hari Terakhir -->
+        <div class="ios-glass rounded-3xl p-5 space-y-3">
+            <div class="flex items-center justify-between">
+                <h3 class="text-sm font-extrabold text-white flex items-center gap-1.5">
+                    <i class="ph-fill ph-clock-counter-clockwise text-emerald-400"></i>
+                    <span>Riwayat Absensi 30 Hari Terakhir</span>
+                </h3>
+                <button onclick="loadPortalDashboardData()" class="text-xs text-yellow-300 underline">Muat Ulang</button>
+            </div>
+            <div id="history30DaysContainer" class="space-y-2 max-h-80 overflow-y-auto pr-1"></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // KONSTANTA WAJIB: URL WEB APP GOOGLE APPS SCRIPT DITANAM DI KODE
+        // ============================================================================
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbzV4FbLZq1ZMIq5wmuP3uXCWcvzxxvHcRtah7gJIIGmaSSIBXicJ1gDOvaDEtIgJPXG/exec';
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // Hanya menyimpan sessionToken dan profil dasar siswa (nis, nama, kelas, peran).
+        // PIN TIDAK PERNAH DISIMPAN DI LOCALSTORAGE MAUPUN DOM.
+        const PORTAL_KEYS = {
+            SESSION_TOKEN: 'alamin_v6_student_session_token',
+            STUDENT_PROFILE: 'alamin_v6_student_profile'
+        };
+
+        const getStore = (k, def) => {
+            try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; }
+        };
+        const setStore = (k, val) => {
+            try { localStorage.setItem(k, JSON.stringify(val)); } catch (e) {}
+        };
+
+        let sessionToken = getStore(PORTAL_KEYS.SESSION_TOKEN, '');
+        let studentProfile = getStore(PORTAL_KEYS.STUDENT_PROFILE, null);
+        let currentCardToken = '';
+        let schoolNameTitle = 'Yayasan Al-Amin Tabanan';
+        let radiusRequired = true;
+
+        // State kamera & deteksi wajah (hanya di memori, tidak pernah disimpan ke localStorage)
+        let selfieStream = null;
+        let photoAttempts = 0;
+        const MAX_PHOTO_ATTEMPTS = 5;
+        let verifiedPhotoBase64 = '';
+        let verifiedWaktuScanIso = '';
+        let verifiedFaceDetected = false;
+        let currentGpsCoords = null;
+        let faceModelLoaded = false;
+
+        function showPortalToast(msg, isError = false) {
+            const textEl = document.getElementById('portalToastText');
+            const dotEl = document.getElementById('portalToastDot');
+            if (textEl) textEl.textContent = msg;
+            if (dotEl) {
+                dotEl.className = isError
+                    ? 'w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]'
+                    : 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+            }
+        }
+
+        function getWitaIsoTimestamp(dateObj = new Date()) {
+            const fmt = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Makassar',
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false
+            });
+            const map = {};
+            fmt.formatToParts(dateObj).forEach(p => { map[p.type] = p.value; });
+            const hh = String(Number(map.hour === '24' ? '00' : map.hour)).padStart(2, '0');
+            return `${map.year}-${map.month}-${map.day}T${hh}:${map.minute}:${map.second}+08:00`;
+        }
+
+        async function callGasPost(payload) {
+            if (GAS_URL.includes('ISI_ID_DEPLOYMENT')) {
+                throw new Error('Konstanta GAS_URL belum diisi oleh Admin Sekolah.');
+            }
+            const res = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ ...payload, sessionToken })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return await res.json();
+        }
+
+        async function callGasGet(params) {
+            if (GAS_URL.includes('ISI_ID_DEPLOYMENT')) {
+                throw new Error('Konstanta GAS_URL belum diisi oleh Admin Sekolah.');
+            }
+            const q = new URLSearchParams({ ...params, sessionToken }).toString();
+            const sep = GAS_URL.includes('?') ? '&' : '?';
+            const res = await fetch(`${GAS_URL}${sep}${q}`, { method: 'GET' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return await res.json();
+        }
+
+        // ============================================================================
+        // AUTO-LOGIN SAAT HALAMAN DIBUKA (cekSesi)
+        // ============================================================================
+        async function initPortalAutoLogin() {
+            if (!sessionToken) {
+                showLoginScreen();
+                return;
+            }
+
+            try {
+                const res = await callGasGet({ action: 'cekSesi' });
+                if (res.result === 'success' && res.data && res.data.peran === 'SISWA') {
+                    studentProfile = {
+                        nis: res.data.nis,
+                        nama: res.data.nama,
+                        kelas: res.data.kelas,
+                        peran: res.data.peran
+                    };
+                    setStore(PORTAL_KEYS.STUDENT_PROFILE, studentProfile);
+                    showDashboardScreen();
+                    loadPortalDashboardData();
+                } else {
+                    clearSessionAndShowLogin('Sesi berakhir, silakan login lagi');
+                }
+            } catch (err) {
+                showLoginScreen();
+            }
+        }
+
+        function showLoginScreen(errMsg = '') {
+            document.getElementById('loginView').classList.remove('hidden');
+            document.getElementById('dashboardView').classList.add('hidden');
+            const errBox = document.getElementById('studentLoginError');
+            if (errMsg) {
+                errBox.textContent = errMsg;
+                errBox.classList.remove('hidden');
+            } else {
+                errBox.classList.add('hidden');
+            }
+        }
+
+        function clearSessionAndShowLogin(msg) {
+            sessionToken = '';
+            studentProfile = null;
+            setStore(PORTAL_KEYS.SESSION_TOKEN, '');
+            setStore(PORTAL_KEYS.STUDENT_PROFILE, null);
+            showLoginScreen(msg);
+        }
+
+        function showDashboardScreen() {
+            document.getElementById('loginView').classList.add('hidden');
+            document.getElementById('dashboardView').classList.remove('hidden');
+            if (studentProfile) {
+                document.getElementById('dispNis').textContent = studentProfile.nis;
+                document.getElementById('dispNama').textContent = studentProfile.nama;
+                document.getElementById('dispKelas').textContent = studentProfile.kelas;
+                const init = (studentProfile.nama || 'S').split(' ').slice(0, 2).map(w => w[0]).join('');
+                document.getElementById('studentInitialsAvatar').textContent = init;
+            }
+        }
+
+        // ============================================================================
+        // LOGIN SISWA HANYA DENGAN PIN 6 DIGIT (action = loginSiswaPin)
+        // ============================================================================
+        async function handleStudentLogin() {
+            const pinInputEl = document.getElementById('studentPinInput');
+            const pinVal = pinInputEl.value.trim();
+            const errBox = document.getElementById('studentLoginError');
+            errBox.classList.add('hidden');
+
+            if (!/^\d{6}$/.test(pinVal)) {
+                showLoginScreen('PIN harus terdiri dari 6 digit angka.');
+                return;
+            }
+
+            // Kosongkan input PIN dari DOM segera setelah dibaca
+            pinInputEl.value = '';
+
+            try {
+                const res = await callGasPost({
+                    action: 'loginSiswaPin',
+                    pin: pinVal,
+                    perangkat: navigator.userAgent.slice(0, 80)
+                });
+
+                if (res.result !== 'success') {
+                    showLoginScreen(res.message || 'PIN salah');
+                    return;
+                }
+
+                sessionToken = res.data.sessionToken;
+                studentProfile = {
+                    nis: res.data.nis,
+                    nama: res.data.nama,
+                    kelas: res.data.kelas,
+                    peran: res.data.peran
+                };
+                setStore(PORTAL_KEYS.SESSION_TOKEN, sessionToken);
+                setStore(PORTAL_KEYS.STUDENT_PROFILE, studentProfile);
+
+                showDashboardScreen();
+                loadPortalDashboardData();
+                showPortalToast('Selamat datang, ' + studentProfile.nama);
+            } catch (err) {
+                showLoginScreen(err.message);
+            }
+        }
+
+        async function handleStudentLogout() {
+            try {
+                if (sessionToken) await callGasPost({ action: 'logout' });
+            } catch (e) {}
+            clearSessionAndShowLogin('');
+            showPortalToast('Anda telah keluar dari sesi.');
+        }
+
+        // ============================================================================
+        // BERANDA SISWA: JAM SERVER WITA, CHECK-IN MANDIRI, KARTU QR CADANGAN
+        // (Aturan B.4: Dipanggil via POST JSON)
+        // ============================================================================
+        async function loadPortalDashboardData() {
+            try {
+                const res = await callGasPost({ action: 'portalSiswaData' });
+                if (res.result !== 'success') {
+                    clearSessionAndShowLogin(res.message || 'Sesi berakhir, silakan login lagi');
+                    return;
+                }
+
+                const d = res.data;
+                if (d.siswa) {
+                    document.getElementById('dispNis').textContent = d.siswa.nis;
+                    document.getElementById('dispNama').textContent = d.siswa.nama;
+                    document.getElementById('dispKelas').textContent = d.siswa.kelas;
+                    currentCardToken = d.siswa.cardToken || '';
+                }
+                if (d.jendela && d.jendela.namaSekolah) {
+                    schoolNameTitle = d.jendela.namaSekolah;
+                }
+                radiusRequired = d.jendela ? (d.jendela.aktifkanRadius !== false) : true;
+                document.getElementById('dispServerDate').textContent = d.tanggalHariIni;
+                document.getElementById('dispServerTime').textContent = d.jamServerWita + ' WITA';
+                document.getElementById('dispWindowRange').textContent = `${d.jendela.mulai} – ${d.jendela.selesai}`;
+
+                const badge = document.getElementById('todayStatusBadge');
+                const timeTxt = document.getElementById('todayScanTimeText');
+                const btnCheckin = document.getElementById('btnSelfCheckin');
+                const btnLabel = document.getElementById('btnSelfCheckinLabel');
+                const notice = document.getElementById('windowNoticeText');
+
+                if (d.statusHariIni && d.statusHariIni.status) {
+                    badge.textContent = d.statusHariIni.status.toUpperCase();
+                    badge.className = 'inline-block mt-1.5 px-5 py-2 rounded-2xl text-base font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/40';
+                    const jam = (d.statusHariIni.waktuScan || '').slice(11, 19);
+                    timeTxt.textContent = `Tercatat pukul ${jam} WITA melalui ${d.statusHariIni.metode}`;
+                    btnCheckin.disabled = true;
+                    btnLabel.textContent = 'Sudah Tercatat Hari Ini';
+                    notice.textContent = 'Presensi Anda hari ini sudah tersimpan di server.';
+                } else {
+                    badge.textContent = 'BELUM ABSEN';
+                    badge.className = 'inline-block mt-1.5 px-5 py-2 rounded-2xl text-base font-black bg-white/10 text-white border border-white/20';
+                    timeTxt.textContent = '';
+
+                    if (d.jendela.terbuka) {
+                        btnCheckin.disabled = false;
+                        btnLabel.textContent = 'Absen Masuk Sekarang';
+                        notice.textContent = `Jendela check-in mandiri sedang dibuka (Jam server: ${d.jamServerWita} WITA).`;
+                    } else {
+                        btnCheckin.disabled = true;
+                        btnLabel.textContent = 'Di luar jam check-in mandiri';
+                        notice.textContent = `Di luar jam check-in mandiri. Jendela buka pukul ${d.jendela.mulai}–${d.jendela.selesai} WITA (Jam server: ${d.jamServerWita} WITA).`;
+                    }
+                }
+
+                // Render Kartu QR milik siswa sendiri (Bagian C: boleh diunduh)
+                const qrBox = document.getElementById('studentOwnQrCanvas');
+                qrBox.innerHTML = '';
+                if (d.siswa && d.siswa.cardToken) {
+                    new QRCode(qrBox, {
+                        text: d.siswa.cardToken,
+                        width: 160,
+                        height: 160,
+                        colorDark: '#042211',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                    document.getElementById('cardStatusInfo').textContent = `Kartu Aktif • NIS: ${d.siswa.nis}`;
+                    document.getElementById('btnDownloadQrPng').disabled = false;
+                } else {
+                    qrBox.innerHTML = `<p class="text-xs text-rose-600 font-bold p-4">Kartu QR belum diterbitkan atau telah dicabut.</p>`;
+                    document.getElementById('cardStatusInfo').textContent = 'Hubungi Admin Sekolah';
+                    document.getElementById('btnDownloadQrPng').disabled = true;
+                }
+
+                // Render Riwayat Pengajuan Izin Saya
+                const izinBox = document.getElementById('myLeaveListContainer');
+                if (izinBox) {
+                    izinBox.innerHTML = (d.izinSaya || []).map(iz => `
+                        <div class="p-2.5 rounded-xl bg-black/35 border border-white/10 flex items-center justify-between text-xs">
+                            <div>
+                                <b class="text-yellow-300">${escapeHtml(iz.jenis)}</b> (${escapeHtml(iz.tanggal)})
+                                <p class="text-[11px] text-white/65">${escapeHtml(iz.keterangan)}</p>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10">${escapeHtml(iz.status)}</span>
+                        </div>
+                    `).join('');
+                }
+
+                // Render Riwayat 30 Hari Terakhir
+                const histBox = document.getElementById('history30DaysContainer');
+                if (histBox) {
+                    const hist = d.riwayat30Hari || [];
+                    histBox.innerHTML = hist.length === 0
+                        ? `<p class="text-xs text-white/50 text-center py-4">Belum ada riwayat absensi.</p>`
+                        : hist.map(h => `
+                            <div class="ios-glass-card rounded-xl p-3 flex items-center justify-between text-xs">
+                                <div>
+                                    <div class="font-bold text-white">${escapeHtml(h.tanggal)}</div>
+                                    <div class="text-[10px] text-white/60">
+                                        Waktu: ${escapeHtml((h.waktuScan || '').slice(11, 19))} WITA • ${escapeHtml(h.metode)}
+                                        ${h.jarakMeter !== '' && h.jarakMeter !== undefined ? ` • 📍 ${escapeHtml(h.jarakMeter)}m` : ''}
+                                    </div>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-lg font-extrabold text-[11px] ${h.status === 'Hadir' ? 'bg-emerald-500/20 text-emerald-300' : h.status === 'Terlambat' ? 'bg-orange-400/20 text-orange-300' : 'bg-yellow-400/20 text-yellow-300'}">${escapeHtml(h.status)}</span>
+                            </div>
+                        `).join('');
+                }
+            } catch (err) {
+                showPortalToast('Gagal memuat beranda: ' + err.message, true);
+            }
+        }
+
+        // ============================================================================
+        // BAGIAN C: UNDUH KARTU QR (PNG 85×54mm PADA 300 DPI = 1004×638 PX)
+        // ============================================================================
+        function downloadStudentQrCardPng() {
+            if (!currentCardToken || !studentProfile) {
+                showPortalToast('Kartu QR belum tersedia.', true);
+                return;
+            }
+            const qrContainer = document.getElementById('studentOwnQrCanvas');
+            const qrSource = qrContainer.querySelector('canvas') || qrContainer.querySelector('img');
+            if (!qrSource) {
+                showPortalToast('Gambar QR belum siap.', true);
+                return;
+            }
+
+            // 85mm x 54mm pada 300 DPI = 1004 x 638 piksel
+            const canvas = document.createElement('canvas');
+            canvas.width = 1004;
+            canvas.height = 638;
+            const ctx = canvas.getContext('2d');
+
+            // Latar putih & bingkai hijau zamrud
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#0c5c2c';
+            ctx.lineWidth = 16;
+            ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+
+            // Header Yayasan
+            ctx.fillStyle = '#0c5c2c';
+            ctx.font = '800 30px "Plus Jakarta Sans", sans-serif';
+            ctx.fillText((schoolNameTitle || 'YAYASAN AL-AMIN TABANAN').toUpperCase(), 56, 95);
+
+            ctx.fillStyle = '#ca8a04';
+            ctx.font = '700 22px "Plus Jakarta Sans", sans-serif';
+            ctx.fillText('KARTU IDENTITAS PRESENSI QR SISWA', 56, 132);
+
+            // Nama, NIS, Kelas
+            ctx.fillStyle = '#111827';
+            ctx.font = '800 42px "Plus Jakarta Sans", sans-serif';
+            const cleanName = String(studentProfile.nama || '').slice(0, 26);
+            ctx.fillText(cleanName, 56, 260);
+
+            ctx.fillStyle = '#0c5c2c';
+            ctx.font = '700 32px monospace';
+            ctx.fillText(`NIS   : ${studentProfile.nis || '-'}`, 56, 335);
+
+            ctx.fillStyle = '#1f2937';
+            ctx.font = '700 32px "Plus Jakarta Sans", sans-serif';
+            ctx.fillText(`Kelas : ${studentProfile.kelas || '-'}`, 56, 390);
+
+            ctx.fillStyle = '#6b7280';
+            ctx.font = '600 18px "Plus Jakarta Sans", sans-serif';
+            ctx.fillText('Kartu ini adalah identitas Anda. Jangan bagikan kepada orang lain.', 56, 565);
+
+            // Gambar QR Code di sisi kanan
+            ctx.drawImage(qrSource, 620, 140, 320, 320);
+
+            const dataUrl = canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = `Kartu_QR_${studentProfile.nis || 'Siswa'}_300DPI.png`;
+            a.click();
+            showPortalToast('Kartu QR (PNG 300 DPI) berhasil diunduh.');
+        }
+
+        // ============================================================================
+        // BAGIAN D & H: ABSEN MANDIRI DENGAN KAMERA DEPAN, DETEKSI WAJAH & LOKASI GPS
+        // ============================================================================
+        async function ensureFaceDetectorReady() {
+            if (faceModelLoaded) return true;
+            try {
+                if (window.faceapi) {
+                    await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
+                    faceModelLoaded = true;
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        async function openSelfieCheckinFlow() {
+            if (photoAttempts >= MAX_PHOTO_ATTEMPTS) {
+                showPortalToast('Silakan lapor ke guru piket.', true);
+                return;
+            }
+
+            const panel = document.getElementById('selfieCheckinPanel');
+            const gpsBanner = document.getElementById('gpsStatusBanner');
+            const btnSubmit = document.getElementById('btnSubmitVerifiedCheckin');
+            panel.classList.remove('hidden');
+            btnSubmit.disabled = true;
+            verifiedPhotoBase64 = '';
+            verifiedFaceDetected = false;
+            currentGpsCoords = null;
+
+            // 1. Minta lokasi GPS terlebih dahulu (Bagian H.3)
+            // 2. Buka kamera depan (facingMode: 'user') atau aktifkan fallback kamera HP jika di dalam Google Sites iframe
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Izin streaming kamera diblokir oleh iframe');
+                }
+                selfieStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
+                    audio: false
+                });
+                const videoEl = document.getElementById('selfieVideo');
+                videoEl.srcObject = selfieStream;
+                videoEl.classList.remove('hidden');
+                document.getElementById('selfiePreviewImg').classList.add('hidden');
+                document.getElementById('iframeCameraFallbackBox').classList.add('hidden');
+                document.getElementById('btnCaptureSelfie').classList.remove('hidden');
+            } catch (err) {
+                // Aktifkan mode tangkap kamera native HP (bekerja di dalam Google Sites iframe)
+                document.getElementById('selfieVideo').classList.add('hidden');
+                document.getElementById('btnCaptureSelfie').classList.add('hidden');
+                document.getElementById('iframeCameraFallbackBox').classList.remove('hidden');
+                document.getElementById('faceDetectionMessage').textContent = 'Kamera live diblokir oleh embed Google Sites. Silakan klik "Buka Kamera Depan HP" di atas.';
+            }
+
+            ensureFaceDetectorReady();
+        }
+
+        function handleNativeSelfieCapture(ev) {
+            const file = ev.target && ev.target.files && ev.target.files[0];
+            if (!file) return;
+            if (photoAttempts >= MAX_PHOTO_ATTEMPTS) {
+                document.getElementById('faceDetectionMessage').textContent = 'Silakan lapor ke guru piket.';
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = async function() {
+                    await processCapturedImageElement(img, img.width, img.height);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            ev.target.value = '';
+        }
+
+        function closeSelfieCheckinFlow() {
+            if (selfieStream) {
+                selfieStream.getTracks().forEach(t => t.stop());
+                selfieStream = null;
+            }
+            document.getElementById('selfieCheckinPanel').classList.add('hidden');
+        }
+
+        function retakeSelfiePhoto() {
+            if (photoAttempts >= MAX_PHOTO_ATTEMPTS) {
+                document.getElementById('faceDetectionMessage').textContent = 'Silakan lapor ke guru piket.';
+                document.getElementById('btnCaptureSelfie').disabled = true;
+                return;
+            }
+            verifiedPhotoBase64 = '';
+            verifiedFaceDetected = false;
+            document.getElementById('selfiePreviewImg').classList.add('hidden');
+            document.getElementById('btnRetakeSelfie').classList.add('hidden');
+            if (selfieStream) {
+                document.getElementById('selfieVideo').classList.remove('hidden');
+                document.getElementById('btnCaptureSelfie').classList.remove('hidden');
+            } else {
+                document.getElementById('iframeCameraFallbackBox').classList.remove('hidden');
+            }
+            updateSubmitCheckinButtonState();
+        }
+
+        async function captureAndDetectFace() {
+            if (photoAttempts >= MAX_PHOTO_ATTEMPTS) {
+                document.getElementById('faceDetectionMessage').textContent = 'Silakan lapor ke guru piket.';
+                document.getElementById('btnCaptureSelfie').disabled = true;
+                return;
+            }
+
+            const videoEl = document.getElementById('selfieVideo');
+            if (!videoEl || !videoEl.videoWidth) {
+                document.getElementById('nativeSelfieFileInput').click();
+                return;
+            }
+
+            await processCapturedImageElement(videoEl, videoEl.videoWidth, videoEl.videoHeight);
+        }
+
+        async function processCapturedImageElement(sourceEl, srcWidth, srcHeight) {
+            photoAttempts++;
+            document.getElementById('attemptCounterText').textContent = `${photoAttempts}/${MAX_PHOTO_ATTEMPTS}`;
+
+            // Kompres ke maksimal 640px, JPEG kualitas 0.7 (Bagian D.4)
+            const maxDim = 640;
+            let w = srcWidth;
+            let h = srcHeight;
+            if (w > maxDim || h > maxDim) {
+                if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(sourceEl, 0, 0, w, h);
+
+            const msgBox = document.getElementById('faceDetectionMessage');
+            msgBox.textContent = 'Memeriksa keberadaan wajah pada foto...';
+
+            let detectedCount = 0;
+            try {
+                if ('FaceDetector' in window) {
+                    const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
+                    const faces = await detector.detect(canvas);
+                    detectedCount = faces.length;
+                } else {
+                    const loaded = await ensureFaceDetectorReady();
+                    if (loaded && window.faceapi) {
+                        const detections = await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 }));
+                        detectedCount = detections.length;
+                    }
+                }
+            } catch (e) {
+                detectedCount = 0;
+            }
+
+            if (detectedCount === 1) {
+                verifiedFaceDetected = true;
+                verifiedPhotoBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                verifiedWaktuScanIso = getWitaIsoTimestamp(new Date());
+
+                const previewImg = document.getElementById('selfiePreviewImg');
+                previewImg.src = verifiedPhotoBase64;
+                previewImg.classList.remove('hidden');
+                document.getElementById('selfieVideo').classList.add('hidden');
+                document.getElementById('iframeCameraFallbackBox').classList.add('hidden');
+
+                document.getElementById('btnCaptureSelfie').classList.add('hidden');
+                document.getElementById('btnRetakeSelfie').classList.remove('hidden');
+
+                msgBox.textContent = '✔ Wajah terdeteksi dengan jelas. Silakan klik "Kirim Absen".';
+                msgBox.className = 'p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-xs font-bold text-center text-emerald-200';
+            } else {
+                verifiedFaceDetected = false;
+                verifiedPhotoBase64 = '';
+
+                if (photoAttempts >= MAX_PHOTO_ATTEMPTS) {
+                    msgBox.textContent = 'Silakan lapor ke guru piket.';
+                    document.getElementById('btnCaptureSelfie').disabled = true;
+                } else {
+                    msgBox.textContent = 'Wajah tidak terdeteksi. Pastikan wajah Anda terlihat jelas, cukup cahaya, dan menghadap kamera, lalu foto ulang.';
+                }
+                msgBox.className = 'p-2.5 rounded-xl bg-rose-500/25 border border-rose-400/40 text-xs font-bold text-center text-rose-200';
+            }
+
+            updateSubmitCheckinButtonState();
+        }
+
+        function updateSubmitCheckinButtonState() {
+            const btnSubmit = document.getElementById('btnSubmitVerifiedCheckin');
+            const locationOk = !radiusRequired || (currentGpsCoords && typeof currentGpsCoords.latitude === 'number');
+            btnSubmit.disabled = !(verifiedFaceDetected && verifiedPhotoBase64 && locationOk);
+        }
+
+        async function submitVerifiedSelfCheckin() {
+            const btnSubmit = document.getElementById('btnSubmitVerifiedCheckin');
+            btnSubmit.disabled = true;
+
+            try {
+                const payload = {
+                    action: 'checkinMandiri',
+                    fotoBase64: verifiedPhotoBase64,
+                    mimeType: 'image/jpeg',
+                    faceDetected: verifiedFaceDetected,
+                    waktuScanKlien: verifiedWaktuScanIso || getWitaIsoTimestamp(new Date()),
+                    latitude: currentGpsCoords ? currentGpsCoords.latitude : null,
+                    longitude: currentGpsCoords ? currentGpsCoords.longitude : null,
+                    accuracy: currentGpsCoords ? currentGpsCoords.accuracy : null
+                };
+
+                const res = await callGasPost(payload);
+                // Hapus foto & koordinat dari memori setelah dikirim
+                verifiedPhotoBase64 = '';
+                currentGpsCoords = null;
+
+                if (res.result !== 'success') {
+                    showPortalToast(res.message, true);
+                    btnSubmit.disabled = false;
+                } else {
+                    showPortalToast(res.message, false);
+                    closeSelfieCheckinFlow();
+                    loadPortalDashboardData();
+                }
+            } catch (err) {
+                showPortalToast('Gagal mengirim absen: ' + err.message, true);
+                btnSubmit.disabled = false;
+            }
+        }
+
+        async function submitStudentLeave() {
+            const jenis = document.getElementById('leaveTypeSelect').value;
+            const alasan = document.getElementById('leaveReasonInput').value.trim();
+            const link = document.getElementById('leaveProofLinkInput').value.trim();
+
+            if (!alasan) {
+                showPortalToast('Keterangan alasan izin/sakit wajib diisi.', true);
+                return;
+            }
+
+            const fullKet = link ? `${alasan} (Bukti: ${link})` : alasan;
+            try {
+                const res = await callGasPost({
+                    action: 'izinAjukan',
+                    jenis: jenis,
+                    keterangan: fullKet
+                });
+                if (res.result !== 'success') {
+                    showPortalToast(res.message, true);
+                    return;
+                }
+                document.getElementById('leaveReasonInput').value = '';
+                document.getElementById('leaveProofLinkInput').value = '';
+                showPortalToast(res.message, false);
+                loadPortalDashboardData();
+            } catch (err) {
+                showPortalToast('Gagal mengirim pengajuan: ' + err.message, true);
+            }
+        }
+
+        window.onload = function () {
+            initPortalAutoLogin();
+        };
+    </script>
+</body>
+</html>
